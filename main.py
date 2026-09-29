@@ -5,10 +5,26 @@ import asyncio
 import requests
 import json
 from datetime import datetime, timedelta
+from threading import Thread
+from flask import Flask
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+# --- KEEP ALIVE WEB SERVER (For Render Free Service) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is Alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 # --- BOT SETUP ---
 intents = discord.Intents.default()
@@ -19,6 +35,21 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # CONFIGURATION (Replace with your actual Staff Log Channel ID)
 LOG_CHANNEL_ID = 123456789012345678
+
+# --- SECURITY ROLE CONFIGURATION ---
+STAFF_ROLE_ID = 1516046338154823830
+
+ALLOWED_MOD_ROLES = [
+    1554028560266690590,  # Ultra Perms
+    1554530013750235136,  # Owner
+    1554010338951962665,  # Admin
+    1534230206032642058,  # Girl Owner
+    1516047233978466334,  # Co Owner
+    1529006187759140975,  # Manager
+    1526950737026875412,  # Head Mod
+    1516046808252682291,  # Mod
+    1531686180511551568   # Role Mod
+]
 
 # --- DATABASE SETUP (SQLite for permanent storage) ---
 conn = sqlite3.connect("bot_data.db")
@@ -56,13 +87,27 @@ async def on_ready():
     print(f"✅ Bot Online: {bot.user.name}")
 
 # ==========================================
-# 1. STAFF RECRUITMENT SYSTEM
+# 1. STAFF RECRUITMENT SYSTEM (SECURED)
 # ==========================================
 
 @bot.tree.command(name="addstaff", description="Promote a user to staff and log recruitment.")
-@app_commands.checks.has_permissions(manage_roles=True)
-async def addstaff(interaction: discord.Interaction, target: discord.Member, role: discord.Role):
-    await target.add_roles(role)
+async def addstaff(interaction: discord.Interaction, target: discord.Member):
+    # Security Check: Verifies if command executor holds an allowed management role
+    executor_role_ids = [role.id for role in interaction.user.roles]
+    has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
+
+    if not has_permission:
+        await interaction.response.send_message("❌ Aapke paas staff add karne ki permission nahi hai!", ephemeral=True)
+        return
+
+    # Fetch and validate the target Staff Role
+    staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
+    if not staff_role:
+        await interaction.response.send_message("❌ Server me Staff Role nahi mila! Check Role ID.", ephemeral=True)
+        return
+
+    # Assign only the fixed Staff Role
+    await target.add_roles(staff_role)
     mod_id = str(interaction.user.id)
     
     cursor.execute("INSERT INTO staff (mod_id, recruited_count) VALUES (?, 1) ON CONFLICT(mod_id) DO UPDATE SET recruited_count = recruited_count + 1", (mod_id,))
@@ -74,14 +119,14 @@ async def addstaff(interaction: discord.Interaction, target: discord.Member, rol
     embed = discord.Embed(title="🛡️ Staff Recruitment Log", color=discord.Color.green(), timestamp=datetime.utcnow())
     embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
     embed.add_field(name="New Staff Member", value=target.mention, inline=True)
-    embed.add_field(name="Role Assigned", value=role.mention, inline=False)
+    embed.add_field(name="Role Assigned", value=staff_role.mention, inline=False)
     embed.add_field(name="Total Recruited by Mod", value=f"**{total_recruited}** users", inline=False)
     
     log_channel = bot.get_channel(LOG_CHANNEL_ID)
     if log_channel:
         await log_channel.send(embed=embed)
         
-    await interaction.response.send_message(f"✅ {target.mention} ko {role.mention} role de diya gaya! Total Recruited: **{total_recruited}**", ephemeral=True)
+    await interaction.response.send_message(f"✅ {target.mention} ko {staff_role.mention} role de diya gaya! Total Recruited: **{total_recruited}**", ephemeral=True)
 
 @bot.tree.command(name="staffstats", description="Check staff recruitment stats of a moderator.")
 async def staffstats(interaction: discord.Interaction, moderator: discord.Member = None):
@@ -122,8 +167,14 @@ async def challenge_role(interaction: discord.Interaction, defender: discord.Mem
     await interaction.response.send_message(content=f"{defender.mention} aapko challenge mila hai!", embed=embed)
 
 @bot.tree.command(name="log-hunt-match", description="Log a Role Hunt match result (Admin/Staff only).")
-@app_commands.checks.has_permissions(manage_roles=True)
 async def log_hunt_match(interaction: discord.Interaction, challenger: discord.Member, defender: discord.Member, gamemode: str, winner: discord.Member, proof: str):
+    executor_role_ids = [role.id for role in interaction.user.roles]
+    has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
+
+    if not has_permission:
+        await interaction.response.send_message("❌ Aapke paas match log karne ki permission nahi hai!", ephemeral=True)
+        return
+
     if winner.id == challenger.id:
         cursor.execute("INSERT OR IGNORE INTO hunt_wins (challenger_id, defender_id, gamemode) VALUES (?, ?, ?)",
                        (str(challenger.id), str(defender.id), gamemode))
@@ -207,8 +258,14 @@ class EventRegistrationView(discord.ui.View):
         await interaction.message.edit(embed=embed, view=self)
 
 @bot.tree.command(name="create-event", description="Create a tournament or drawing contest registration post.")
-@app_commands.checks.has_permissions(administrator=True)
 async def create_event(interaction: discord.Interaction, title: str, slots: int, question: str = None):
+    executor_role_ids = [role.id for role in interaction.user.roles]
+    has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
+
+    if not has_permission:
+        await interaction.response.send_message("❌ Aapke paas event create karne ki permission nahi hai!", ephemeral=True)
+        return
+
     view = EventRegistrationView(title, slots, question)
     embed = discord.Embed(title=f"🏆 {title}", color=discord.Color.purple())
     embed.add_field(name="Slots", value=f"**0 / {slots}**", inline=True)
@@ -287,7 +344,8 @@ async def mcskin(interaction: discord.Interaction, username: str):
     embed.set_thumbnail(url=f"https://visage.surgeplay.com/face/128/{uuid}")
     await interaction.response.send_message(embed=embed)
 
-# --- SAFE BOT STARTUP ---
+# --- SAFE BOT STARTUP WITH KEEP ALIVE ---
+keep_alive()  # Web server start karega Render ko awake rakhne ke liye
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if BOT_TOKEN:
