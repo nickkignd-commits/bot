@@ -97,13 +97,13 @@ async def addstaff(interaction: discord.Interaction, target: discord.Member):
     has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
 
     if not has_permission:
-        await interaction.response.send_message("❌ Aapke paas staff add karne ki permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("❌ You do not have permission to execute this command!", ephemeral=True)
         return
 
     # Fetch and validate the target Staff Role
     staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
     if not staff_role:
-        await interaction.response.send_message("❌ Server me Staff Role nahi mila! Check Role ID.", ephemeral=True)
+        await interaction.response.send_message("❌ Staff role not found in this server. Please check the Role ID.", ephemeral=True)
         return
 
     # Assign only the fixed Staff Role
@@ -126,7 +126,7 @@ async def addstaff(interaction: discord.Interaction, target: discord.Member):
     if log_channel:
         await log_channel.send(embed=embed)
         
-    await interaction.response.send_message(f"✅ {target.mention} ko {staff_role.mention} role de diya gaya! Total Recruited: **{total_recruited}**", ephemeral=True)
+    await interaction.response.send_message(f"✅ Successfully assigned {staff_role.mention} to {target.mention}! Total Recruited: **{total_recruited}**", ephemeral=True)
 
 @bot.tree.command(name="staffstats", description="Check staff recruitment stats of a moderator.")
 async def staffstats(interaction: discord.Interaction, moderator: discord.Member = None):
@@ -135,7 +135,11 @@ async def staffstats(interaction: discord.Interaction, moderator: discord.Member
     row = cursor.fetchone()
     count = row[0] if row else 0
     
-    embed = discord.Embed(title="📊 Staff Recruitment Stats", description=f"{mod.mention} ne total **{count}** staff members recruit kiye hain.", color=discord.Color.blue())
+    embed = discord.Embed(
+        title="📊 Staff Recruitment Stats", 
+        description=f"{mod.mention} has recruited a total of **{count}** staff members.", 
+        color=discord.Color.blue()
+    )
     await interaction.response.send_message(embed=embed)
 
 # ==========================================
@@ -162,9 +166,9 @@ async def challenge_role(interaction: discord.Interaction, defender: discord.Mem
     embed.add_field(name="Defender (Role Holder)", value=defender.mention, inline=True)
     embed.add_field(name="Gamemode", value=f"**{gamemode.value}**", inline=False)
     embed.add_field(name="Deadline (1 Week)", value=f" ()", inline=False)
-    embed.set_footer(text="Aapke paas fight poori karne ke liye 1 hafta hai!")
+    embed.set_footer(text="You have 1 week to complete this challenge match!")
     
-    await interaction.response.send_message(content=f"{defender.mention} aapko challenge mila hai!", embed=embed)
+    await interaction.response.send_message(content=f"{defender.mention} you have been challenged!", embed=embed)
 
 @bot.tree.command(name="log-hunt-match", description="Log a Role Hunt match result (Admin/Staff only).")
 async def log_hunt_match(interaction: discord.Interaction, challenger: discord.Member, defender: discord.Member, gamemode: str, winner: discord.Member, proof: str):
@@ -172,7 +176,7 @@ async def log_hunt_match(interaction: discord.Interaction, challenger: discord.M
     has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
 
     if not has_permission:
-        await interaction.response.send_message("❌ Aapke paas match log karne ki permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("❌ You do not have permission to log match results!", ephemeral=True)
         return
 
     if winner.id == challenger.id:
@@ -192,7 +196,7 @@ async def log_hunt_match(interaction: discord.Interaction, challenger: discord.M
     embed.add_field(name="Proof Link", value=proof, inline=False)
     
     if wins >= 3:
-        embed.add_field(name="🎉 ROLE UNLOCKED!", value=f"{challenger.mention} ne 3/4 gamemodes jeet liye hain! Staff please role assign karein.", inline=False)
+        embed.add_field(name="🎉 ROLE UNLOCKED!", value=f"{challenger.mention} has won 3/4 gamemodes! Staff, please assign the role.", inline=False)
         
     await interaction.response.send_message(embed=embed)
 
@@ -204,22 +208,22 @@ class EventRegistrationModal(discord.ui.Modal):
     def __init__(self, question_text, view_ref):
         super().__init__(title="Event Registration")
         self.view_ref = view_ref
-        self.answer = discord.ui.TextInput(label=question_text[:45], placeholder="Yahan answer fill karein...", required=True)
+        self.answer = discord.ui.TextInput(label=question_text[:45], placeholder="Enter your response here...", required=True)
         self.add_item(self.answer)
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id in self.view_ref.registered_users:
-            await interaction.response.send_message("❌ Aap pehle se registered hain!", ephemeral=True)
+            await interaction.response.send_message("❌ You are already registered for this event!", ephemeral=True)
             return
 
         if len(self.view_ref.registered_users) >= self.view_ref.max_slots:
-            await interaction.response.send_message("❌ Slots full ho chuke hain!", ephemeral=True)
+            await interaction.response.send_message("❌ Registration closed! All slots are full.", ephemeral=True)
             return
 
         self.view_ref.registered_users.append(interaction.user.id)
         self.view_ref.user_data[interaction.user.id] = self.answer.value
         await self.view_ref.update_embed(interaction)
-        await interaction.response.send_message(f"✅ Successful! Your details: **{self.answer.value}**", ephemeral=True)
+        await interaction.response.send_message(f"✅ Registration successful! Your details: **{self.answer.value}**", ephemeral=True)
 
 class EventRegistrationView(discord.ui.View):
     def __init__(self, title, max_slots, question=None):
@@ -239,7 +243,7 @@ class EventRegistrationView(discord.ui.View):
             return
 
         if interaction.user.id in self.registered_users:
-            await interaction.response.send_message("❌ Aap pehle se registered hain!", ephemeral=True)
+            await interaction.response.send_message("❌ You are already registered for this event!", ephemeral=True)
             return
 
         if self.question:
@@ -247,7 +251,7 @@ class EventRegistrationView(discord.ui.View):
         else:
             self.registered_users.append(interaction.user.id)
             await self.update_embed(interaction)
-            await interaction.response.send_message("✅ Aap successully register ho gaye hain!", ephemeral=True)
+            await interaction.response.send_message("✅ You have successfully registered!", ephemeral=True)
 
     async def update_embed(self, interaction: discord.Interaction):
         embed = interaction.message.embeds[0]
@@ -263,7 +267,7 @@ async def create_event(interaction: discord.Interaction, title: str, slots: int,
     has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
 
     if not has_permission:
-        await interaction.response.send_message("❌ Aapke paas event create karne ki permission nahi hai!", ephemeral=True)
+        await interaction.response.send_message("❌ You do not have permission to create events!", ephemeral=True)
         return
 
     view = EventRegistrationView(title, slots, question)
@@ -271,7 +275,7 @@ async def create_event(interaction: discord.Interaction, title: str, slots: int,
     embed.add_field(name="Slots", value=f"**0 / {slots}**", inline=True)
     if question:
         embed.add_field(name="Required Info", value=f"`{question}`", inline=True)
-    embed.description = "Niche **Register Now** button par click karke participate karein!"
+    embed.description = "Click **Register Now** below to join the event!"
     
     await interaction.response.send_message(embed=embed, view=view)
 
@@ -281,7 +285,7 @@ async def create_event(interaction: discord.Interaction, title: str, slots: int,
 
 @bot.tree.command(name="say", description="Send a message with animated/custom emojis without Nitro.")
 async def say(interaction: discord.Interaction, message: str):
-    await interaction.response.send_message("Sending...", ephemeral=True)
+    await interaction.response.send_message("Sending message...", ephemeral=True)
     await interaction.channel.send(message)
 
 @bot.tree.command(name="react", description="React to any message with custom/animated emojis.")
@@ -291,7 +295,7 @@ async def react(interaction: discord.Interaction, message_id: str, emoji: str):
         await msg.add_reaction(emoji)
         await interaction.response.send_message(f"✅ Reacted with {emoji}", ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"❌ Error: Emoji ID ya Message ID galat hai! ({e})", ephemeral=True)
+        await interaction.response.send_message(f"❌ Error: Invalid Message ID or Emoji! ({e})", ephemeral=True)
 
 # ==========================================
 # 5. WHEEL SPINNER / PICKER
@@ -301,10 +305,10 @@ async def react(interaction: discord.Interaction, message_id: str, emoji: str):
 async def spin(interaction: discord.Interaction, names: str, winners: int = 1):
     name_list = [n.strip() for n in names.split(",") if n.strip()]
     if len(name_list) < 2 or winners > len(name_list):
-        await interaction.response.send_message("❌ Minimum 2 names hone chahiye aur winners count candidates se kam hona chahiye!", ephemeral=True)
+        await interaction.response.send_message("❌ Please provide at least 2 candidates and ensure winner count is valid!", ephemeral=True)
         return
 
-    embed = discord.Embed(title="🎡 Spinning the Wheel...", description="🎰 *Wheel ghum raha hai...*", color=discord.Color.gold())
+    embed = discord.Embed(title="🎡 Spinning the Wheel...", description="🎰 *Selecting winners...*", color=discord.Color.gold())
     embed.add_field(name="Candidates", value=", ".join(name_list))
     await interaction.response.send_message(embed=embed)
 
@@ -335,7 +339,7 @@ async def artshowcase(interaction: discord.Interaction, title: str, image_url: s
 async def mcskin(interaction: discord.Interaction, username: str):
     res = requests.get(f"https://api.mojang.com/users/profiles/minecraft/{username}")
     if res.status_code != 200:
-        await interaction.response.send_message("❌ Player nahi mila!", ephemeral=True)
+        await interaction.response.send_message("❌ Minecraft player not found!", ephemeral=True)
         return
         
     uuid = res.json()['id']
@@ -345,10 +349,10 @@ async def mcskin(interaction: discord.Interaction, username: str):
     await interaction.response.send_message(embed=embed)
 
 # --- SAFE BOT STARTUP WITH KEEP ALIVE ---
-keep_alive()  # Web server start karega Render ko awake rakhne ke liye
+keep_alive()  # Starts the web server to keep Render active
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if BOT_TOKEN:
     bot.run(BOT_TOKEN)
 else:
-    print("❌ BOT_TOKEN environment variable nahi mila! Hosting panel me BOT_TOKEN set karein.")
+    print("❌ BOT_TOKEN environment variable missing! Please set BOT_TOKEN in your hosting dashboard.")
