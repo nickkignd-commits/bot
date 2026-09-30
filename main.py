@@ -36,9 +36,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # CONFIGURATION (Replace with your actual Staff Log Channel ID)
 LOG_CHANNEL_ID = 123456789012345678
 
-# --- SECURITY ROLE CONFIGURATION ---
+# --- SECURITY & ROLE CONFIGURATIONS ---
 STAFF_ROLE_ID = 1516046338154823830
+TRIAL_STAFF_ROLE_ID = 1554751555024986274
+TRIAL_MOD_ROLE_ID = 1554732866393608253
 
+# Management roles allowed to manage full Staff / High Actions
 ALLOWED_MOD_ROLES = [
     1554028560266690590,  # Ultra Perms
     1554530013750235136,  # Owner
@@ -50,6 +53,22 @@ ALLOWED_MOD_ROLES = [
     1516046808252682291,  # Mod
     1531686180511551568   # Role Mod
 ]
+
+# Mod, Head Mod, Role Mod & Upper Management allowed to add Trial Mods
+ALLOWED_TMOD_MANAGERS = [
+    1554028560266690590,  # Ultra Perms
+    1554530013750235136,  # Owner
+    1554010338951962665,  # Admin
+    1534230206032642058,  # Girl Owner
+    1516047233978466334,  # Co Owner
+    1529006187759140975,  # Manager
+    1526950737026875412,  # Head Mod
+    1516046808252682291,  # Mod
+    1531686180511551568   # Role Mod
+]
+
+# Normal Staff + Mod/Admin roles allowed to add Trial Staff
+ALLOWED_STAFF_MANAGERS = ALLOWED_MOD_ROLES + [STAFF_ROLE_ID]
 
 # --- DATABASE SETUP (SQLite for permanent storage) ---
 conn = sqlite3.connect("bot_data.db")
@@ -87,27 +106,24 @@ async def on_ready():
     print(f"✅ Bot Online: {bot.user.name}")
 
 # ==========================================
-# 1. STAFF RECRUITMENT SYSTEM (SECURED)
+# 1. STAFF & RECRUITMENT COMMANDS
 # ==========================================
 
-@bot.tree.command(name="addstaff", description="Promote a user to staff and log recruitment.")
-async def addstaff(interaction: discord.Interaction, target: discord.Member):
-    # Security Check: Verifies if command executor holds an allowed management role
+# Helper function to handle staff additions and logging
+async def process_staff_addition(interaction: discord.Interaction, target: discord.Member, role_id: int, role_name: str, allowed_roles: list):
     executor_role_ids = [role.id for role in interaction.user.roles]
-    has_permission = any(mod_role_id in executor_role_ids for mod_role_id in ALLOWED_MOD_ROLES)
+    has_permission = any(m_id in executor_role_ids for m_id in allowed_roles)
 
     if not has_permission:
-        await interaction.response.send_message("❌ You do not have permission to execute this command!", ephemeral=True)
+        await interaction.response.send_message(f"❌ You do not have permission to add a {role_name}!", ephemeral=True)
         return
 
-    # Fetch and validate the target Staff Role
-    staff_role = interaction.guild.get_role(STAFF_ROLE_ID)
-    if not staff_role:
-        await interaction.response.send_message("❌ Staff role not found in this server. Please check the Role ID.", ephemeral=True)
+    assigned_role = interaction.guild.get_role(role_id)
+    if not assigned_role:
+        await interaction.response.send_message(f"❌ Role for {role_name} not found in server! Please check the Role ID.", ephemeral=True)
         return
 
-    # Assign only the fixed Staff Role
-    await target.add_roles(staff_role)
+    await target.add_roles(assigned_role)
     mod_id = str(interaction.user.id)
     
     cursor.execute("INSERT INTO staff (mod_id, recruited_count) VALUES (?, 1) ON CONFLICT(mod_id) DO UPDATE SET recruited_count = recruited_count + 1", (mod_id,))
@@ -116,17 +132,29 @@ async def addstaff(interaction: discord.Interaction, target: discord.Member):
     cursor.execute("SELECT recruited_count FROM staff WHERE mod_id = ?", (mod_id,))
     total_recruited = cursor.fetchone()[0]
     
-    embed = discord.Embed(title="🛡️ Staff Recruitment Log", color=discord.Color.green(), timestamp=datetime.utcnow())
+    embed = discord.Embed(title=f"🛡️ {role_name} Recruitment Log", color=discord.Color.green(), timestamp=datetime.utcnow())
     embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
-    embed.add_field(name="New Staff Member", value=target.mention, inline=True)
-    embed.add_field(name="Role Assigned", value=staff_role.mention, inline=False)
+    embed.add_field(name="New Member", value=target.mention, inline=True)
+    embed.add_field(name="Role Assigned", value=assigned_role.mention, inline=False)
     embed.add_field(name="Total Recruited by Mod", value=f"**{total_recruited}** users", inline=False)
     
     log_channel = bot.get_channel(LOG_CHANNEL_ID)
     if log_channel:
         await log_channel.send(embed=embed)
         
-    await interaction.response.send_message(f"✅ Successfully assigned {staff_role.mention} to {target.mention}! Total Recruited: **{total_recruited}**", ephemeral=True)
+    await interaction.response.send_message(f"✅ Successfully assigned {assigned_role.mention} to {target.mention}! Total Recruited: **{total_recruited}**", ephemeral=True)
+
+@bot.tree.command(name="addstaff", description="Promote a user to official staff.")
+async def addstaff(interaction: discord.Interaction, target: discord.Member):
+    await process_staff_addition(interaction, target, STAFF_ROLE_ID, "Staff", ALLOWED_MOD_ROLES)
+
+@bot.tree.command(name="addtstaff", description="Promote a user to Trial Staff.")
+async def addtstaff(interaction: discord.Interaction, target: discord.Member):
+    await process_staff_addition(interaction, target, TRIAL_STAFF_ROLE_ID, "Trial Staff", ALLOWED_STAFF_MANAGERS)
+
+@bot.tree.command(name="addtmod", description="Promote a user to Trial Mod.")
+async def addtmod(interaction: discord.Interaction, target: discord.Member):
+    await process_staff_addition(interaction, target, TRIAL_MOD_ROLE_ID, "Trial Mod", ALLOWED_TMOD_MANAGERS)
 
 @bot.tree.command(name="staffstats", description="Check staff recruitment stats of a moderator.")
 async def staffstats(interaction: discord.Interaction, moderator: discord.Member = None):
@@ -137,7 +165,7 @@ async def staffstats(interaction: discord.Interaction, moderator: discord.Member
     
     embed = discord.Embed(
         title="📊 Staff Recruitment Stats", 
-        description=f"{mod.mention} has recruited a total of **{count}** staff members.", 
+        description=f"{mod.mention} has recruited a total of **{count}** members.", 
         color=discord.Color.blue()
     )
     await interaction.response.send_message(embed=embed)
